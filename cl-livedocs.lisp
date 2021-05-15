@@ -241,7 +241,7 @@ the CADR of the list."
 
 (defun make-info-document-for-package (package)
   (let ((doc (make-instance 'lisp-info-document
-                            :name (package-name package)
+                            :name (hunchentoot:url-encode (package-name package))
                             :title (package-name package)))
         (top-node (make-instance 'webinfo::sexp-info-node
                                  :name "Top"
@@ -443,11 +443,13 @@ the CADR of the list."
                         :key 'package-name)))
   (call-next-method))
 
-(defun start (&rest args &key (fulltext-search t))
+(defun start (&rest args &key (fulltext-search t) &allow-other-keys)
   (apply #'webinfo:start-webinfo
-	 :info-repository
-	 (make-instance 'livedocs-info-repository
-			:search-index (when fulltext-search
-					(webinfo::make-memory-search-index)))
-	 :app-settings (list (cons :theme (make-instance 'webinfo::nav-theme)))
-	 args))
+         :info-repository
+         (make-instance 'livedocs-info-repository
+                        :search-index (when fulltext-search
+                                        (webinfo::make-memory-search-index)))
+         :app-settings (list (cons :theme (make-instance 'webinfo::nav-theme)))
+         (let ((acceptor-args (copy-list args)))
+           (remf acceptor-args :fulltext-search)
+           acceptor-args)))
