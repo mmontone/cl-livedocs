@@ -42,14 +42,6 @@
     (loop for node in (nodes doc)
           appending (descendants node))))
 
-#+nil(defmethod render-node-html ((node sexp-info-node) theme stream &key document)
-  (who:with-html-output (stream)
-    (:div :class "node"
-          (render-node-navigation node stream)
-          (:div :class "node-content"
-                (render-sexp-content (contents node) stream))
-          (render-node-navigation node stream))))
-
 ;; From docbrowser
 
 (defun nice-princ-to-string (obj)
@@ -301,7 +293,7 @@ the CADR of the list."
              (:|sectiontitle| ()
                "Dictionary")
              ,@(loop for info in package-info
-                     collect (webinfo::lispinfo->sexp info))))
+                     collect (lispinfo->sexp info))))
 
 
     (push dictionary-node (webinfo::children top-node))
@@ -342,7 +334,7 @@ the CADR of the list."
 
     (setf (webinfo::node-prev class-index-node) "FunctionIndex")
 
-    (webinfo::initialize-lisp-document-indexes doc package-info)
+    (initialize-lisp-document-indexes doc package-info)
 
     doc))
 
@@ -362,23 +354,6 @@ the CADR of the list."
                                 when (member (aget info :type) '(:class))
                                   collect (cons (princ-to-string (aget info :name))
                                                 dictionary-node)))))))
-
-(defun split-into-paragraphs (text)
-  "Divide TEXT into paragraphs, on each empty line."
-  (let ((lines (split-sequence:split-sequence #\newline text))
-        (paragraphs nil)
-        (paragraph nil))
-
-    (loop for line in lines
-          do (if (alexandria:emptyp line)
-                 (progn
-                   (push (nreverse paragraph) paragraphs)
-                   (setf paragraph nil))
-                 ;; else
-                 (push line paragraph))
-          finally (when paragraph
-                    (push (nreverse paragraph) paragraphs)))
-    (nreverse paragraphs)))
 
 (defun lispinfo->sexp (info)
   (ecase (aget info :type)
@@ -468,11 +443,11 @@ the CADR of the list."
                         :key 'package-name)))
   (call-next-method))
 
-(defun start (&key (fulltext-search t))
-  (webinfo:start-webinfo
-   :port 9090
-   :info-repository
-   (make-instance 'livedocs-info-repository
-		  :search-index (when fulltext-search
-				  (webinfo::make-memory-search-index)))
-   :app-settings (list (cons :theme (make-instance 'webinfo::nav-theme)))))
+(defun start (&rest args &key (fulltext-search t))
+  (apply #'webinfo:start-webinfo
+	 :info-repository
+	 (make-instance 'livedocs-info-repository
+			:search-index (when fulltext-search
+					(webinfo::make-memory-search-index)))
+	 :app-settings (list (cons :theme (make-instance 'webinfo::nav-theme)))
+	 args))
