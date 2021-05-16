@@ -445,16 +445,16 @@ the CADR of the list."
 
 (defun start (&rest args &key (fulltext-search t) &allow-other-keys)
   (let ((acceptor
-	  (apply #'webinfo:start-webinfo
-         :info-repository
-         (make-instance 'livedocs-info-repository
-                        :search-index (when fulltext-search
-                                        (webinfo::make-memory-search-index)))
-         :app-settings (list (cons :theme (make-instance 'webinfo::nav-theme)))
-         (let ((acceptor-args (copy-list args)))
-           (remf acceptor-args :fulltext-search)
-           acceptor-args))))
+          (apply #'webinfo:start-webinfo
+                 :info-repository
+                 (make-instance 'livedocs-info-repository
+                                :search-index (when fulltext-search
+                                                (webinfo::make-memory-search-index)))
+                 :app-settings (list (cons :theme (make-instance 'webinfo::nav-theme)))
+                 (let ((acceptor-args (copy-list args)))
+                   (remf acceptor-args :fulltext-search)
+                   acceptor-args))))
     (format t "------------------------------------------------------------------
 Common Lisp live documentation is here: http://localhost:~a~%
 ------------------------------------------------------------------~%"
-	    (hunchentoot:acceptor-port acceptor))))
+            (hunchentoot:acceptor-port acceptor))))
