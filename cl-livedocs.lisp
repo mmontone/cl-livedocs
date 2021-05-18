@@ -251,15 +251,15 @@ the CADR of the list."
                                         :title "Dictionary"
                                         :description (format nil "Dictionary of all external definitions in ~a package" package)))
         (variable-index-node (make-instance 'webinfo::sexp-info-node
-                                            :name "VariableIndex"
+                                            :name "Variable index"
                                             :title "Variable index"
                                             :description "Variables index"))
         (function-index-node (make-instance 'webinfo::sexp-info-node
-                                            :name "FunctionIndex"
+                                            :name "Function index"
                                             :title "Function index"
                                             :description "Functions index"))
         (class-index-node (make-instance 'webinfo::sexp-info-node
-                                         :name "ClassIndex"
+                                         :name "Class index"
                                          :title "Class index"
                                          :description "Classes index"))
         (package-info (collect-package-info package)))
@@ -324,15 +324,15 @@ the CADR of the list."
     (setf (webinfo::node-up class-index-node) "Top")
     (push class-index-node (webinfo::children top-node))
 
-    (setf (webinfo::node-next dictionary-node) "VariableIndex")
+    (setf (webinfo::node-next dictionary-node) "Variable index")
 
     (setf (webinfo::node-prev variable-index-node) "Dictionary")
-    (setf (webinfo::node-next variable-index-node) "FunctionIndex")
+    (setf (webinfo::node-next variable-index-node) "Function index")
 
-    (setf (webinfo::node-prev function-index-node) "VariableIndex")
-    (setf (webinfo::node-next function-index-node) "ClassIndex")
+    (setf (webinfo::node-prev function-index-node) "Variable index")
+    (setf (webinfo::node-next function-index-node) "Class index")
 
-    (setf (webinfo::node-prev class-index-node) "FunctionIndex")
+    (setf (webinfo::node-prev class-index-node) "Function index")
 
     (initialize-lisp-document-indexes doc package-info)
 
