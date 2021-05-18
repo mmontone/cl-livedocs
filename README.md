@@ -1,9 +1,8 @@
 # cl-livedocs
-### _Mariano Montone <marianomontone@gmail.com>_
 
-This is a project to do ... something.
+Documentation browser based on Webinfo for currently loaded Common Lisp definitions.
 
 ## License
 
-MIT
+GPL
 
