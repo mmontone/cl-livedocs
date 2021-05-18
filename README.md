@@ -1,6 +1,6 @@
 # cl-livedocs
 
-Documentation browser based on Webinfo for currently loaded Common Lisp definitions.
+Live web documentation browser for Common Lisp. Based on Webinfo project.
 
 ## License
 
