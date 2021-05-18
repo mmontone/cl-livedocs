@@ -1,9 +1,9 @@
 ;;;; cl-livedocs.asd
 
 (asdf:defsystem #:cl-livedocs
-  :description "Describe cl-livedocs here"
+  :description "Documentation browser based on Webinfo for Common Lisp."
   :author "Mariano Montone <marianomontone@gmail.com>"
-  :license  "MIT"
+  :license  "GPL"
   :version "0.0.1"
   :serial t
   :components ((:file "package")
