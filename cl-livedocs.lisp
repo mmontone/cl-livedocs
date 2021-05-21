@@ -89,6 +89,7 @@
                    (webinfo::text->sexp it))
                (:|menu| ()
                  ,@(loop for node in (list variables-node
+					   macros-node
                                            functions-node
                                            classes-node
                                            index-node)
@@ -162,10 +163,15 @@
 
     (setf (webinfo::children top-node) (nreverse (webinfo::children top-node)))
 
+    (setf (webinfo::node-next top-node) "Variables")
     (setf (webinfo::node-next variables-node) "Macros")
-    (setf (webinfo::node-next functions-node) "Functions")
+    (setf (webinfo::node-prev macros-node) "Variables")
+    (setf (webinfo::node-next macros-node) "Functions")
+    (setf (webinfo::node-prev functions-node) "Macros")
     (setf (webinfo::node-next functions-node) "Classes")
+    (setf (webinfo::node-prev classes-node) "Functions")
     (setf (webinfo::node-next classes-node) "Index")
+    (setf (webinfo::node-prev index-node) "Classes")
 
     (initialize-lisp-document-indexes doc package-info)
 
