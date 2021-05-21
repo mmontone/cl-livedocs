@@ -2,6 +2,7 @@
 
 ;; TODO: parse docstrings and format Texinfo rich text. For example, transform symbols in upper case to links to the object, if present in the package.
 
+(require :def-properties (asdf:system-relative-pathname :cl-livedocs "def-properties.lisp"))
 
 (in-package #:cl-livedocs)
 
@@ -25,15 +26,12 @@
     (tree-find doc node-name)))
 
 (defun collect-package-info (&optional (package *package*))
-  (let (docs)
+  (let (infos)
     (do-external-symbols (symbol package)
-      (when (fboundp symbol)
-        (push (load-function-info symbol) docs))
-      (when (boundp symbol)
-        (push (load-variable-info symbol) docs))
-      (when (safe-class-for-symbol symbol)
-        (push (load-class-info symbol) docs)))
-    docs))
+      (push
+       (def-properties:symbol-properties symbol t)
+       infos))
+    (apply #'append infos)))
 
 (defmethod webinfo::all-nodes ((doc lisp-info-document))
   (labels ((descendants (node)
@@ -41,201 +39,6 @@
                      (apply #'append (mapcar #'descendants (webinfo::children node))))))
     (loop for node in (nodes doc)
           appending (descendants node))))
-
-;; From docbrowser
-
-(defun nice-princ-to-string (obj)
-  (typecase obj
-    (string obj)
-    (keyword (prin1-to-string obj))
-    (t (princ-to-string obj))))
-
-#+sbcl(defmethod documentation ((slotd sb-pcl::condition-effective-slot-definition) (doc-type (eql 't)))
-        "This method definition is missing in SBCL as of 1.0.55 at least. Adding it here
-will make documentation for slots in conditions work properly."
-        (slot-value slotd 'sb-pcl::%documentation))
-
-(defun assoc-cdr (key data &key error-p)
-  "Return (CDR (ASSOC KEY DATA)). If ERROR-P is non-NIL, signal an error if KEY is
-not available is DATA."
-  (let ((v (assoc key data)))
-    (when (and error-p
-               (not v))
-      (error "~s not found in data" key))
-    (cdr v)))
-
-(defun symbol-external-p (symbol &optional (package (symbol-package symbol)))
-  "Return non-NIL if SYMBOL is external in PACKAGE. SYMBOL may be either
-a symbol, or a SETF form, in which case the check will be performed on
-the CADR of the list."
-  (eq (nth-value 1 (find-symbol (symbol-name (cond ((symbolp symbol)
-                                                    symbol)
-                                                   ((eq (car symbol) 'setf)
-                                                    (cadr symbol))
-                                                   (t
-                                                    (error "Unknown symbol type: ~s" symbol))))
-                                package))
-      :external))
-
-(defun prin1-to-string-with-package (obj package)
-  (let ((*package* package))
-    (prin1-to-string obj)))
-
-(defun format-argument-to-string (arg)
-  (etypecase arg
-    (symbol (nice-princ-to-string arg))
-    (list   (mapcar #'(lambda (entry conversion) (funcall conversion entry))
-                    arg (list #'(lambda (v)
-                                  (if (listp v)
-                                      (nice-princ-to-string (car v))
-                                      (nice-princ-to-string v)))
-                              #'prin1-to-string
-                              #'nice-princ-to-string)))))
-
-(defun load-function-info (symbol)
-  (list (cons :name symbol)
-        (cons :documentation (documentation symbol 'function))
-        (cons :args (let ((*print-case* :downcase)
-                          (*package* (symbol-package symbol)))
-                      #+nil(format nil "~{~a~^ ~}"
-                                   (mapcar #'format-argument-to-string (swank-backend:arglist symbol))
-                                   )
-                      (princ-to-string (swank-backend:arglist symbol))))
-        (cons :type (cond ((macro-function symbol) :macro)
-                          ((typep (symbol-function symbol) 'generic-function) :generic-function)
-                          (t :function)))))
-
-(defun load-variable-info (symbol)
-  (list (cons :name (string symbol))
-        (cons :documentation (documentation symbol 'variable))
-        (cons :boundp (boundp symbol))
-        (cons :value (when (boundp symbol) (prin1-to-string (symbol-value symbol))))
-        (cons :constant-p (constantp symbol))
-        (cons :type :variable)))
-
-(defun find-superclasses (class)
-  (labels ((f (classes found)
-             (if (and classes
-                      (not (eq (car classes) (find-class 'standard-object)))
-                      (not (member (car classes) found)))
-                 (f (cdr classes)
-                    (f (closer-mop:class-direct-superclasses (car classes))
-                       (cons (car classes) found)))
-                 found)))
-    (f (list class) nil)))
-
-(defun safe-class-for-symbol (symbol)
-  (handler-case
-      (find-class symbol)
-    (error nil)))
-
-(defun assoc-name (v)
-  (assoc-cdr :name v :error-p t))
-
-(defun specialise->symbol (spec)
-  (case (caar spec)
-    ((defmethod) (cadar spec))
-    #+ccl((ccl::reader-method) (cadr (assoc :method (cdar spec))))
-    (t nil)))
-
-(defun load-specialisation-info (class-name)
-  (let* ((ignored '(initialize-instance))
-         (class (if (symbolp class-name) (find-class class-name) class-name))
-         (spec (swank-backend:who-specializes class)))
-    (unless (eq spec :not-implemented)
-      (sort (loop
-              for v in spec
-              for symbol = (specialise->symbol v)
-              when (and (not (member symbol ignored))
-                        (symbol-external-p symbol (symbol-package (class-name class))))
-                collect (list (cons :name symbol)))
-            #'string< :key (alexandria:compose #'princ-to-string #'assoc-name)))))
-
-(defun %ensure-external (symbol)
-  (let ((name (cond ((symbolp symbol)
-                     symbol)
-                    ((and (listp symbol) (eq (car symbol) 'setf))
-                     (cadr symbol))
-                    (t
-                     (warn "Unknown type: ~s. Expected symbol or SETF form." symbol)
-                     nil))))
-    (when (symbol-external-p name)
-      symbol)))
-
-(defun load-accessor-info (class slot)
-  (flet ((getmethod (readerp method-list)
-           (dolist (method method-list)
-             (let ((name (closer-mop:generic-function-name (closer-mop:method-generic-function method))))
-               (when (and (eq (type-of method) (if readerp
-                                                   'closer-mop:standard-reader-method
-                                                   'closer-mop:standard-writer-method))
-                          (eq (closer-mop:slot-definition-name (closer-mop:accessor-method-slot-definition method))
-                              (closer-mop:slot-definition-name slot)))
-                 (return-from getmethod name))))))
-
-    ;; There are several different situations we want to detect:
-    ;;   1) Only a reader method: "reader FOO"
-    ;;   2) Only a writer method: "writer FOO"
-    ;;   3) Only a writer SETF method: "writer (SETF FOO)"
-    ;;   4) A reader and a SETF method: "accessor FOO"
-    ;;   5) A reader and non-SETF writer: "reader FOO, writer FOO"
-    ;;
-    ;; The return value from this function is an alist of the following form:
-    ;;
-    ;;  ((:READER . FOO-READER) (:WRITER . FOO-WRITER) (:ACCESSOR . FOO-ACCESSOR))
-    ;;
-    ;; Note that if :ACCESSOR is given, then it's guaranteed that neither
-    ;; :READER nor :WRITER will be included.
-    ;;
-    ;; We start by assigning the reader and writer methods to variables
-    (let* ((method-list (closer-mop:specializer-direct-methods class))
-           (reader (%ensure-external (getmethod t method-list)))
-           (writer (%ensure-external (getmethod nil method-list))))
-      ;; Now, detect the 5 different cases, but we coalease case 2 and 3.
-      (cond ((and reader (null writer))
-             `((:reader . ,reader)))
-            ((and (null reader) writer)
-             `((:writer . ,writer)))
-            ((and reader (listp writer) (eq (car writer) 'setf) (eq (cadr writer) reader))
-             `((:accessor . ,reader)))
-            ((and reader writer)
-             `((:reader . ,reader) (:writer . ,writer)))))))
-
-(defun load-slots (class)
-  (closer-mop:ensure-finalized class)
-  (flet ((load-slot (slot)
-           (list (cons :name (string (closer-mop:slot-definition-name slot)))
-                 (cons :documentation (swank-mop:slot-definition-documentation slot))
-                 ;; The LIST call below is because the accessor lookup is wrapped
-                 ;; in a FOR statement in the template.
-                 (cons :accessors (let ((accessor-list (load-accessor-info class slot)))
-                                    (when accessor-list
-                                      (list accessor-list)))))))
-    (mapcar #'load-slot (closer-mop:class-slots class))))
-
-(defun load-class-info (class-name)
-  (let ((cl (find-class class-name)))
-    (list (cons :name          (class-name cl))
-          (cons :documentation (documentation cl 'type))
-          (cons :slots         (load-slots cl))
-          ;; (cons :methods       (load-specialisation-info cl)) TODO: fix
-
-          (cons :type :class))))
-
-(defun %annotate-function-info (fn-info classes)
-  "Append :ACCESSORP tag if the function is present as an accessor function."
-  (loop
-    with name = (cdr (assoc :name fn-info))
-    for class-info in classes
-    do (loop
-         for slot-info in (cdr (assoc :slots class-info))
-         do (loop
-              for accessor in (cdr (assoc :accessors slot-info))
-              for accessor-sym = (cdar accessor)
-              when (or (and (symbolp accessor-sym) (eq accessor-sym name))
-                       (and (listp accessor-sym) (eq (car accessor-sym) 'setf) (eq (cadr accessor-sym) name)))
-                do (return-from %annotate-function-info (append fn-info '((:accessorp t))))))
-    finally (return fn-info)))
 
 ;; Info nodes
 
@@ -246,22 +49,28 @@ the CADR of the list."
         (top-node (make-instance 'webinfo::sexp-info-node
                                  :name "Top"
                                  :title (package-name package)))
-        (dictionary-node (make-instance 'webinfo::sexp-info-node
-                                        :name "Dictionary"
-                                        :title "Dictionary"
-                                        :description (format nil "Dictionary of all external definitions in ~a package" package)))
-        (variable-index-node (make-instance 'webinfo::sexp-info-node
-                                            :name "Variable index"
-                                            :title "Variable index"
-                                            :description "Variables index"))
-        (function-index-node (make-instance 'webinfo::sexp-info-node
-                                            :name "Function index"
-                                            :title "Function index"
-                                            :description "Functions index"))
-        (class-index-node (make-instance 'webinfo::sexp-info-node
-                                         :name "Class index"
-                                         :title "Class index"
-                                         :description "Classes index"))
+        (variables-node (make-instance 'webinfo::sexp-info-node
+                                       :name "Variables"
+                                       :title "Variables"
+                                       :description (format nil "Dictionary of all external variables in ~a package" package)))
+        (macros-node (make-instance 'webinfo::sexp-info-node
+                                    :name "Macros"
+                                    :title "Macros"
+                                    :description (format nil "Dictionary of all external macros in ~a package" package)))
+        (functions-node (make-instance 'webinfo::sexp-info-node
+                                       :name "Functions"
+                                       :title "Functions"
+                                       :description (format nil "Dictionary of all external functions in ~a package" package)))
+        (classes-node (make-instance 'webinfo::sexp-info-node
+                                     :name "Classes"
+                                     :title "Classes"
+                                     :description (format nil "Dictionary of all external classes in ~a package" package)))
+
+        (index-node (make-instance 'webinfo::sexp-info-node
+                                   :name "Index"
+                                   :title "Index"
+                                   :description "Definitions index"))
+
         (package-info (collect-package-info package)))
 
     ;; Build top node
@@ -279,60 +88,84 @@ the CADR of the list."
                ,@(awhen (documentation package t)
                    (webinfo::text->sexp it))
                (:|menu| ()
-                 ,@(loop for node in (list dictionary-node
-                                           variable-index-node
-                                           function-index-node
-                                           class-index-node)
+                 ,@(loop for node in (list variables-node
+                                           functions-node
+                                           classes-node
+                                           index-node)
                          collect (menu-entry node))))))
     (push top-node (nodes doc))
 
-    ;; Build dictionary node
-    (setf (webinfo::node-up dictionary-node) "Top")
-    (setf (webinfo::contents dictionary-node)
+    ;; Build definition nodes
+
+    (setf (webinfo::node-up variables-node) "Top")
+    (setf (webinfo::contents variables-node)
           `(:|chapter| ()
              (:|sectiontitle| ()
-               "Dictionary")
-             ,@(loop for info in package-info
+               "Variables")
+             ,@(loop for info in (remove-if-not
+                                  (lambda (info)
+                                    (eql (aget info :type) :variable))
+                                  package-info)
                      collect (lispinfo->sexp info))))
 
+    (push variables-node (webinfo::children top-node))
 
-    (push dictionary-node (webinfo::children top-node))
-
-    ;; Build index nodes
-    (setf (webinfo::node-up variable-index-node) "Top")
-    (setf (webinfo::contents variable-index-node)
+    (setf (webinfo::node-up macros-node) "Top")
+    (setf (webinfo::contents macros-node)
           `(:|chapter| ()
-             (:|sectiontitle| () "Variable index")
-             (:|printindex| (:|value| "vr"))))
-    (push variable-index-node (webinfo::children top-node))
+             (:|sectiontitle| ()
+               "Macros")
+             ,@(loop for info in (remove-if-not
+                                  (lambda (info)
+                                    (eql (aget info :type) :macro))
+                                  package-info)
+                     collect (lispinfo->sexp info))))
 
-    (setf (webinfo::node-up function-index-node) "Top")
-    (setf (webinfo::contents function-index-node)
+    (push macros-node (webinfo::children top-node))
+
+    (setf (webinfo::node-up functions-node) "Top")
+    (setf (webinfo::contents functions-node)
           `(:|chapter| ()
-             (:|sectiontitle| () "Function index")
-             (:|printindex| (:|value| "fn"))))
+             (:|sectiontitle| ()
+               "Functions")
+             ,@(loop for info in (remove-if-not
+                                  (lambda (info)
+                                    (member (aget info :type) '(:function :generic-function)))
+                                  package-info)
+                     collect (lispinfo->sexp info))))
 
-    (setf (webinfo::node-up function-index-node) "Top")
-    (push function-index-node (webinfo::children top-node))
+    (push functions-node (webinfo::children top-node))
 
-    (setf (webinfo::node-up class-index-node) "Top")
-    (setf (webinfo::contents class-index-node)
+    (setf (webinfo::node-up classes-node) "Top")
+    (setf (webinfo::contents classes-node)
           `(:|chapter| ()
-             (:|sectiontitle| () "Class index")
-             (:|printindex| (:|value| "tp"))))
+             (:|sectiontitle| ()
+               "Classes")
+             ,@(loop for info in (remove-if-not
+                                  (lambda (info)
+                                    (member (aget info :type) '(:class)))
+                                  package-info)
+                     collect (lispinfo->sexp info))))
+    (push classes-node (webinfo::children top-node))
 
-    (setf (webinfo::node-up class-index-node) "Top")
-    (push class-index-node (webinfo::children top-node))
+    ;; Build index node
+    (setf (webinfo::node-up index-node) "Top")
+    (setf (webinfo::contents index-node)
+          `(:|chapter| ()
+             (:|sectiontitle| () "Index")
+             (:|printindex| (:|value| "vr"))
+             (:|printindex| (:|value| "fn"))
+             (:|printindex| (:|value| "tp"))
+             (:|printindex| (:|value| "cp"))))
 
-    (setf (webinfo::node-next dictionary-node) "Variable index")
+    (push index-node (webinfo::children top-node))
 
-    (setf (webinfo::node-prev variable-index-node) "Dictionary")
-    (setf (webinfo::node-next variable-index-node) "Function index")
+    (setf (webinfo::children top-node) (nreverse (webinfo::children top-node)))
 
-    (setf (webinfo::node-prev function-index-node) "Variable index")
-    (setf (webinfo::node-next function-index-node) "Class index")
-
-    (setf (webinfo::node-prev class-index-node) "Function index")
+    (setf (webinfo::node-next variables-node) "Macros")
+    (setf (webinfo::node-next functions-node) "Functions")
+    (setf (webinfo::node-next functions-node) "Classes")
+    (setf (webinfo::node-next classes-node) "Index")
 
     (initialize-lisp-document-indexes doc package-info)
 
@@ -340,20 +173,26 @@ the CADR of the list."
 
 
 (defun initialize-lisp-document-indexes (doc package-info)
-  (let ((dictionary-node (webinfo::find-node doc "Dictionary")))
-    (setf (webinfo::indexes doc)
-          (list (cons :fn (loop for info in package-info
-                                when (member (aget info :type) '(:function))
-                                  collect (cons (princ-to-string (aget info :name))
-                                                dictionary-node)))
-                (cons :vr (loop for info in package-info
-                                when (member (aget info :type) '(:variable))
-                                  collect (cons (princ-to-string (aget info :name))
-                                                dictionary-node)))
-                (cons :tp (loop for info in package-info
-                                when (member (aget info :type) '(:class))
-                                  collect (cons (princ-to-string (aget info :name))
-                                                dictionary-node)))))))
+  (setf (webinfo::indexes doc)
+        (list (cons :vr (loop for info in package-info
+                              when (member (aget info :type) '(:variable))
+                                collect (cons (princ-to-string (aget info :name))
+                                              (webinfo::find-node doc "Variables"))))
+              (cons :fn
+                    (append
+                     (loop for info in package-info
+                           when (member (aget info :type) '(:macro))
+                             collect (cons (princ-to-string (aget info :name))
+                                           (webinfo::find-node doc "Macros")))
+                     (loop for info in package-info
+                           when (member (aget info :type) '(:function :generic-function))
+                             collect (cons (princ-to-string (aget info :name))
+                                           (webinfo::find-node doc "Functions")))
+                     ))
+              (cons :tp (loop for info in package-info
+                              when (member (aget info :type) '(:class))
+                                collect (cons (princ-to-string (aget info :name))
+                                              (webinfo::find-node doc "Classes")))))))
 
 (defun lispinfo->sexp (info)
   (ecase (aget info :type)
@@ -443,7 +282,7 @@ the CADR of the list."
                         :key 'package-name)))
   (call-next-method))
 
-(defun start (&rest args &key (fulltext-search t) &allow-other-keys)
+(defun start (&rest args &key fulltext-search &allow-other-keys)
   (let ((acceptor
           (apply #'webinfo:start-webinfo
                  :info-repository
