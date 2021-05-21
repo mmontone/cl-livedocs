@@ -245,7 +245,7 @@ the CADR of the list."
                             :title (package-name package)))
         (top-node (make-instance 'webinfo::sexp-info-node
                                  :name "Top"
-                                 :title "Top"))
+                                 :title (package-name package)))
         (dictionary-node (make-instance 'webinfo::sexp-info-node
                                         :name "Dictionary"
                                         :title "Dictionary"
