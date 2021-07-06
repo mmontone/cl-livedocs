@@ -7,5 +7,6 @@
   :version "0.0.1"
   :serial t
   :components ((:file "package")
+	       (:file "def-properties")
                (:file "cl-livedocs"))
   :depends-on (:alexandria :anaphora :assoc-utils :webinfo))
